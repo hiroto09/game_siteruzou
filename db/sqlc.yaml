@@ -1,0 +1,11 @@
+version: "2"
+cloud:
+  project: "playing-game"
+sql:
+- schema: "./schema.sql"
+  queries: "./query.sql"
+  engine: "mysql"
+  gen:
+    go:
+      package: "model"
+      out: "../src/model"
