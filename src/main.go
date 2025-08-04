@@ -25,14 +25,13 @@ var (
 )
 
 func main() {
-	// DB接続
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:3306)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	// DB接続（loc=Asia%2FTokyo を明示）
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:3306)/%s?charset=utf8mb4&parseTime=True&loc=Asia%%2FTokyo",
 		os.Getenv("MYSQL_USER"),
 		os.Getenv("MYSQL_PASSWORD"),
 		os.Getenv("MYSQL_HOST"),
 		os.Getenv("MYSQL_NAME"),
 	)
-
 
 	conn, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -43,13 +42,9 @@ func main() {
 	q := model.New(conn)
 
 	// WebSocketエンドポイント設定
-	http.HandleFunc("/ws", handleConnections) // WebSocketエンドポイント
-
-	// クライアントへの送信ハンドラ
-	go handleBroadcast() //通知送信処理
-
-	// Ping監視ループ
-	go monitorPing(q)
+	http.HandleFunc("/ws", handleConnections)
+	go handleBroadcast() // 通知送信処理
+	go monitorPing(q)    // Ping監視処理
 
 	// サーバー起動
 	fmt.Println("🌐 Listening on :8080")
@@ -59,10 +54,8 @@ func main() {
 	}
 }
 
-// WebSocket接続受付
 func handleConnections(w http.ResponseWriter, r *http.Request) {
-
-    frontendURL := os.Getenv("FRONTEND_URL")
+	frontendURL := os.Getenv("FRONTEND_URL")
 
 	allowedOrigins := map[string]bool{
 		frontendURL: true,
@@ -110,11 +103,12 @@ func handleBroadcast() {
 	}
 }
 
-// Ping監視処理
 func monitorPing(q *model.Queries) {
 	ip := os.Getenv("SWITCH_PORT")
 	prevStatus := false
 	reLoss := regexp.MustCompile(`([0-9.]+)% packet loss`)
+
+	jst, _ := time.LoadLocation("Asia/Tokyo")
 
 	for i := 1; ; i++ {
 		cmd := exec.Command("ping", "-c", "1", ip)
@@ -137,11 +131,9 @@ func monitorPing(q *model.Queries) {
 				fmt.Printf("📊 loss: %.1f%%, 状態: %v\n", lossRate, status)
 
 				if status != prevStatus {
-
-					jst, _ := time.LoadLocation("Asia/Tokyo")
 					now := time.Now().In(jst)
 
-					// DB保存
+					// DB保存（JSTで）
 					err := q.InsertPingLog(context.Background(), model.InsertPingLogParams{
 						Timestamp: now,
 						Status:    status,
@@ -153,8 +145,9 @@ func monitorPing(q *model.Queries) {
 						fmt.Println("✅ DBに保存しました")
 					}
 
+					// JSTでWebSocket通知
 					msg := fmt.Sprintf(`{"status":%v,"lossRate":%.1f,"time":"%s"}`,
-						status, lossRate, time.Now().Format(time.RFC3339))
+						status, lossRate, now.Format(time.RFC3339))
 					broadcast <- msg
 				}
 
